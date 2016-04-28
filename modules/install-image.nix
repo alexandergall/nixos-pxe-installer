@@ -80,7 +80,10 @@ let
         import (runCommand "get-rev-count"
           { preferLocalBuild = true;
             inherit nixpkgs;
-            buildInputs = [ pkgs.git ]; }
+            buildInputs = [ pkgs.git ];
+	    ## Force execution for every invocation because there
+	    ## is no easy way to detect when the Git rev has changed.
+	    dummy = builtins.currentTime; }
           ''
             ## Note: older versions of git require write access to the parent's
             ## .git hierarchy for submodules.  This will lead to breakage here
