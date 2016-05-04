@@ -74,12 +74,14 @@ let
   ## '<nixpkgs/nixos>' --set -A system" to generate the final
   ## configuration, which is executed in the context of the supplied
   ## channel.
-  firmwareConfig = {
+  extraConfig = {
     hardware.enableAllFirmware = true;
+    fileSystems."/".device = "/none";
+    boot.loader.grub.device = "/none";
   };
   config =(import (channel + "/nixos/nixos/lib/eval-config.nix") {
     inherit system;
-    modules = [ firmwareConfig ] ++
+    modules = [ extraConfig ] ++
       optional (nixosConfigDir != null && (pathExists nixosConfigDir))
         (nixosConfigDir + "/configuration.nix");
   }).config;
@@ -88,15 +90,17 @@ let
     (builtins.substring 33 (-1) (baseNameOf channel));
 
 in pkgs.vmTools.runInLinuxVM (
-  pkgs.runCommand "install-tarball-${version}"
+  let
+    configDir = optionalString (nixosConfigDir != null) nixosConfigDir;
+  in pkgs.runCommand "install-tarball-${version}"
     { preVM =
         ''
           mkdir $out
           diskImage=nixos.img
           ${pkgs.vmTools.qemu}/bin/qemu-img create -f raw $diskImage "${toString diskSize}M"
           mv closure* xchg/
-          if [ -n "${nixosConfigDir}" ]; then
-            cp -prd ${nixosConfigDir} xchg/
+          if [ -n "${configDir}" ]; then
+            cp -prd ${configDir} xchg/
           fi
         '';
       buildInputs = [ pkgs.utillinux pkgs.perl pkgs.e2fsprogs ];
@@ -115,8 +119,7 @@ in pkgs.vmTools.runInLinuxVM (
             unzip
             perlArchiveCpio
           ] ++ additionalPkgs);
-      inherit postVM diskSize memSize;
-      inherit nixosConfigDir;
+      inherit postVM diskSize memSize configDir;
     }
     ''
       rootDisk=/dev/vda
@@ -193,10 +196,8 @@ in pkgs.vmTools.runInLinuxVM (
       # Copy the NixOS configuration from which the system configuration
       # was created.
       mkdir /mnt/etc/nixos
-      if [ -n "${nixosConfigDir}" ]; then
-        (cd /tmp/xchg/$(basename ${nixosConfigDir}) && tar --exclude="*~" -cf - .) | (cd /mnt/etc/nixos && tar xf -)
-      else
-        mkdir /mnt/etc/nixos
+      if [ -n "${configDir}" ]; then
+        (cd /tmp/xchg/$(basename ${configDir}) && tar --exclude="*~" -cf - .) | (cd /mnt/etc/nixos && tar xf -)
       fi
 
       umount /mnt/proc /mnt/dev /mnt/sys

@@ -135,7 +135,6 @@ in
       bootLoader = {
         efinetDHCPInterface = mkOption {
           default = "efinet0";
-          example = "efinet0";
           description = ''
             The EFI interface that will be used by the PXE boot loader
             to perform DHCP and transfer the kernel via TFTP.
@@ -143,7 +142,6 @@ in
         };
         linuxPnPInterface = mkOption {
           default = "eth0";
-          example = "eth0";
           description = ''
             The interface that will be used by the kernel obtained by
             the PXE boot loader to perform DHCP and mount the NFS root
@@ -154,7 +152,7 @@ in
 
       extraKernelOptions = mkOption {
         default = "";
-        example = literalExample ''"IXGB y IXGBE y"'';
+        example = "IXGB y IXGBE y";
         description = ''
           The nfsroot module generates a custom kernel that has
           support for some network drivers and root NFS compiled in.

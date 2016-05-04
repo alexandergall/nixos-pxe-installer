@@ -154,19 +154,21 @@ in
         example = "path-to/nixos-configuration";
         description = ''
           This option specifies the directory that holds the NixOS configuration
-          that will be installed on the client.  It must contain the file
+          that will be installed on the client by recursively copying its contents
+          to <filename>/etc/nixos</filename>.  It must contain the file
           <filename>configuration.nix</filename>, which must import the file
           <filename>./hardware-configuration.nix</filename> and should import
           <filename>./networking</filename>, if the automatic network configuration
-          provided by the <option>useDHCP</option> and <option>staticInterfaceFromDHCP</option>
-          options is used.
+          provided by the <option>networking.useDHCP</option> and
+          <option>networking.staticInterfaceFromDHCP</option> options is used.
 
           The file <filename>hardware-configuration</filename> doesn't need to be
           present.  It will be created during the installation process, overwriting
           any existing file.
 
           If the option is null, an empty configuration directory will be created and
-          populated by "nixos-generate-config" when the client system is installed.
+          populated with a default configuration by "nixos-generate-config" when the
+          client system is installed.
         '';
       };
 
@@ -175,24 +177,28 @@ in
           type = types.path;
           default = <nixpkgs>;
           example = literalExample ''
-            nixpkgs = ./nixpkgs
+            nixpkgs.path = ./nixpkgs
           '';
           description = ''
             The path to a directory that contains a complete nixpkgs source tree from
             which the configuration of the install client is derived.  This can either be
-            a checkout of a Git repository or a NixOS channel named "nixos".  The former will be
-            transformed into a channel named "nixos" before further processing.
+            an existing NixOS channel named "nixos" or a checkout of a Git repository.
+            The latter will be transformed into a channel named "nixos" before further
+            processing.
           '';
         };
         stableBranch = mkOption {
           type = types.bool;
           default = true;
           description = ''
-            If <option>installImage.nixpkgs.path</option> is a Git repository, it will be
+            If <option>nixpkgs.path</option> is a Git repository, it will be
             transformed into a NixOS channel.  Part of this process is the generation of the
-            file <filename>.version-suffix</filename> from the Git revision via "git describe".
+            file <filename>.version-suffix</filename> from the Git revision.
             The version suffix starts with a dot if this option is set to true, otherwise it
-            starts with the string "pre" to indicate a pre-release.
+            starts with the string "pre" to indicate a pre-release.  It should be set to true
+            when the Git repository is a checkout of one of the stable nixpkgs release branches.
+
+            If <option>nixpkgs.path</option> is a channel, this option is ignored.
           '';
         };
       };
@@ -200,6 +206,9 @@ in
       system = mkOption {
         type = types.str;
         default = builtins.currentSystem;
+        example = literalExample ''
+          system = "x86_64-linux"
+        '';
         description = ''
           The system type for which to build the configration to be installed on
           the client.
@@ -209,10 +218,16 @@ in
       additionalPkgs = mkOption {
         type = types.listOf types.package;
         default = [];
+        example = literalExample ''
+          additionalPkgs = with (import nixpkgs.path {
+            inherit installImage.system;
+          }).pkgs; [ foo bar ];
+        '';
         description = ''
           A list of packages whose closures will be added to that of the system
-          specified by the configuration in option
-          <option>installImage.nixosConfigDir</option>.
+          derived from  <option>nixpkgs.path</option> and <option>nixosConfigDir</option>.
+          Care must be taken to properly reference packages from the context of
+          <option>nixpkgs.path</option> as illustrated by the example.
         '';
       };
 
@@ -221,8 +236,8 @@ in
         default = https://cache.nixos.org/;
         description = ''
           The URL of the binary cache to register for the nixos channel of the
-          system if the channel is derived from a Git checkout if nixpkgs.  This
-          option is ignored if <option>installImage.nixpkgs.path</option> refers
+          system if the channel is derived from a Git checkout.  This
+          option is ignored if <option>nixpkgs.path</option> refers
           to an existing channel.  In that case, the URL of the binary cache of
           that channel is preserved.
         '';
@@ -230,7 +245,6 @@ in
 
       rootDevice = mkOption {
         default = "/dev/sda";
-        example = "/dev/sda";
         description = ''
           This option specifies the disk to use for the installation.  The installer
           will use the entire disk for the NixOS system.  It creates two partitions,
@@ -246,7 +260,7 @@ in
           description = ''
             If set to true, the installed system will use DHCP on all available
             interfaces.  If set to false, a static configuration is created according
-            to the option <option>staticInterfaceFromDHCP</option>.
+            to the option <option>networking.staticInterfaceFromDHCP</option>.
           '';
         };
         staticInterfaceFromDHCP = mkOption {
@@ -254,7 +268,7 @@ in
           default = "";
           example = "enp1s0";
           description = ''
-            If <option>useDHCP</option> is false, a static interface configuration will
+            If <option>networking.useDHCP</option> is false, a static interface configuration will
             be created for the interface specified in this option. The IP address, netmask
             and default gateway are taken from the DHCP information obtained during the
             installation process.
