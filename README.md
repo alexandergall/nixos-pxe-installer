@@ -7,19 +7,20 @@ root file system.
 ## Overview
 
 The system is composed of two components: the module
-`modules/install-image.nix`, which creates an *install image* of a
-NixOS system and the module `modules/installer-nfsroot.nix`, which
-creates a generic installer for such an image.
+`modules/install-image.nix`, which creates an [install
+image](#installImage) of a NixOS system and the module
+`modules/installer-nfsroot.nix`, which creates a generic
+[installer](#installer) for such an image.
 
-An install image is a `tar` archive of a complete NixOS system created
-from a given `nixpkgs` source tree and an arbitrary NixOS
-configuration.  The image contains the closure of the corresponding
-top-level system configuration.
+An install image is a `tar` archive of a (almost) complete NixOS
+system created from a given `nixpkgs` source tree and an arbitrary
+NixOS configuration.  The image contains the closure of the
+corresponding top-level system configuration.
 
 The installer provides the files required for a PXE-based network boot
 of the client system on which the install image is going to be
-installed.  The client mounts a generic root file system over NFS
-which contains a copy of the install image and some client-specific
+installed.  It mounts a generic root file system over NFS which
+contains a copy of the install image and some client-specific
 configuration parameters.  The installer then partitions and formats
 the local disk, unpacks the install image onto it, performs the final
 activation of the NixOS configuration and reboots the client into the
@@ -32,15 +33,21 @@ within a `chroot` environment.  In particular, the NixOS versions from
 which the installer and install image are derived are completely
 independent.
 
-## Quickstart
+## HowTo
+
+This section provides a walk-through of the steps needed to install a
+system using default settings for the creation of the installer and
+install image.  The [documentation section](#documentation) describes
+the installer and install image modules in detail.
 
 ### Setting up the installer
 
 #### <a name="buildingInstaller"></a>Building
 
-To create an installer with default settings, clone into the
-`nixos-pxe-installer` repository and put the following Nix expression
-in the file `default.nix` in the top-level directory
+To create an installer, clone into the `nixos-pxe-installer`
+repository and create the file `installer.nix` containing the Nix
+expression for the desired configuration of the installer as described
+in the [section about installer examples](#installerExamples), e.g.
 
 ```
 { system ? "x86_64-linux" }:
@@ -60,13 +67,13 @@ in
   [ nfsRootTarball bootLoader kernel ]
 ```
 
-Then execute `nix-build` in the top-level directory.  This will create
-three derivations containing the components of the installer (in this
-example, all derivations have already been built in a previous
-invocation)
+Then execute `nix-build installer.nix` in the top-level directory.
+This will create three derivations containing the components of the
+installer (in this example, all derivations have already been built in
+a previous invocation)
 
 ```
-$ nix-build
+$ nix-build installer.nix
 /nix/store/kx60qw6065x246c4jmmmqh24qxr5sb1a-nfsroot
 /nix/store/xl4lr843c0m30vhraxpncn02jnhm6l5b-grub-efi-bootloader
 /nix/store/b3rld51kcz1kb5c97xk0kl1dmfp04m5s-linux-3.18.29
@@ -98,11 +105,16 @@ In this example, we use the following assignments
    * 1st DNS server address 198.51.100.3
    * 2nd DNS server address 198.51.100.4
    * DNS domain `example.org`
+   * Location of the Grub boot loader and Linux kernel on the TFTP server: `/srv/tftp/nixos`
+   * Location of the root filesystem on the NFS server: `/srv/nixos/nfsroot`
 
 ##### DHCP Server
 
 
-The following configuration is for a stock ISC DHCP server.
+The following configuration is for a stock ISC DHCP server.  It
+supplies the install client with its IP configuration, the information
+needed to find and load the Grub boot loader and Linux kernel as well
+as from where to mount the root file system over NFS.
 
 ```
 option domain-name "example.org";
@@ -159,6 +171,11 @@ deamon as
 in.tftpd --listen --address 198.51.100.1:69 --secure /srv/tftp
 ```
 
+If you need to, you can [modify the boot loader at a later time
+without going through the `nix-build`
+process](#bootLoaderManualUpdate) (e.g. when you don't have access to
+a NixOS system).
+
 ##### NFS Server
 
 Create the path `/srv/nixos/nfsroot` and unpack `nfsroot.tar.xz` (see
@@ -181,23 +198,65 @@ line to `/etc/exports` (or the equivalent on your system)
 
 #### Building
 
-Create a file `default.nix` in the top-level directory containing the
+Create the file `image.nix` in the top-level directory containing the
 configuration for the install image as described in the [section about
-install image examples](#imageExamples), then execute
+install image examples](#imageExamples), e.g.
 
 ```
-$ nix-build
+$ cat image.nix
+with import <nixpkgs> {};
+
+let
+  build = (import <nixpkgs/nixos/lib/eval-config.nix> {
+    inherit system;
+    modules = [ modules/install-image.nix ];
+  }).config.system.build;
+in
+  with build.installImage;
+    [ tarball config channel ]
+```
+
+then execute `nix-build image.nix`
+
+```
+$ nix-build image.nix
+/nix/store/mkg51qxpqzg85gb0l70yrx102hgs6k1j-install-tarball-nixos-16.03.659.011ea84
+/nix/store/7fym30dgr33xyss5aa9zvlrmb9sxjf5k-install-config
+/nix/store/ip7vgnh1ffhpc07gmjpzr8b8c38m1c9j-nixos-16.03.659.011ea84
+
+$ ls -l result*
+lrwxrwxrwx 1 gall users 83 May 11 11:07 result -> /nix/store/mkg51qxpqzg85gb0l70yrx102hgs6k1j-install-tarball-nixos-16.03.659.011ea84
+lrwxrwxrwx 1 gall users 58 May 11 11:07 result-2 -> /nix/store/7fym30dgr33xyss5aa9zvlrmb9sxjf5k-install-config
+lrwxrwxrwx 1 gall users 67 May 11 11:07 result-3 -> /nix/store/ip7vgnh1ffhpc07gmjpzr8b8c38m1c9j-nixos-16.03.659.011ea84
+
+$ ls result*
+result:
+nixos.tar.gz
+
+result-2:
+config
+
+result-3:
+binary-caches  nixos
+
 ```
 
 #### Staging
 
-Copy the tarball to `/srv/nixos/nfsroot/installer` and create a
+Copy the tarball `result/nixos.tar.gz` to
+`/srv/nixos/nfsroot/installer` on the TFTP server and create a
 symbolic link to it from `/srv/nixos/nfsroot/installer/nixos-image`
 
 ```
 # cp /path-to/nixos.tar.gz /srv/nixos/nfsroot/installer
 # ln -s ./nixos.tar.gz /srv/nixos/nfsroot/installer/nixos-image
 ```
+
+Copy the configuration file `result-2/config` to `/srv/nixos/nfsroot/installer/config`.
+
+The channel in `result-3` is not needed for the installation process.
+It can be used to upgrade an existing system to a new version of the
+channel (documentation TBD).
 
 ### Installing the Client
 
@@ -206,7 +265,9 @@ desired interface and initiate a system boot.  With all previous steps
 completed, the client should be installed and rebooted into the new
 system automatically.
 
-## Install Image
+## <a name="documentation"></a>Documentation
+
+### <a name="installImage"></a>Install Image
 
 The main ingredients to the creation of an install image are a copy of
 a `nixpkgs` source tree and a NixOS configuration directory structured
@@ -217,7 +278,7 @@ The `nixpkgs` source tree can either be a NixOS *channel* named
 transformed into such a channel by the module.  Please refer to the
 [appendix](#appendixChannels) for details.
 
-### Module configuration
+#### Module configuration
 
 Pleas refer to the options declaration in `module/install-image.nix`
 for a full description of the available options.  Alternatively, you
@@ -229,16 +290,16 @@ nix-build module-manpages.nix -A installImage && man result/share/man/man5/confi
 
 in the repository to get a summary as a pseudo-manpage.
 
-### Image creation
+#### Image creation
 
 The actual image is created by `lib/make-install-image.nix` inside a
 VM.  The main ingredient is the evaluation of the desired NixOS
 configuration in the context of the supplied channel (simplified):
 
 ```
-  config = (import (channel + "/nixos/nixos/lib/eval-config.nix") {
-    modules = [ (nixosConfigDir + "/configuration.nix") ];
-  }).config;
+config = (import (channel + "/nixos/nixos/lib/eval-config.nix") {
+  modules = [ (nixosConfigDir + "/configuration.nix") ];
+}).config;
 ```
 
 The Nix store of the install image is populated with the closures of
@@ -276,7 +337,7 @@ called `nixos.tar.gz` and `config`, respectively.  These files need to
 be copied into the `installer` directory of the NFS root file system
 used by the installer.
 
-### <a name="imageExamples"></a>Examples
+#### <a name="imageExamples"></a>Examples
 
 In the following examples, we assume that the current directory is a
 checkout of the `nixos-pxe-installer` repository.
@@ -292,9 +353,8 @@ let
     modules = [ modules/install-image.nix ];
   }).config.system.build.installImage;
 in
-  {
-    inherit (installImage) channel tarball config;
-  }
+  with installImage;
+    [ tarball config channel ]
 ```
 
 which can be executed by `nix-build`.  This will build an install
@@ -329,9 +389,8 @@ let
                 installImageConfig ];
   }).config.system.build.installImage;
 in
-  {
-    inherit (installImage) channel tarball config;
-  }
+  with installImage;
+    [ tarball config channel ]
 ```
 
 To create an install image for the current version of the NixOS
@@ -365,9 +424,8 @@ let
                 installImageConfig ];
   }).config.system.build.installImage;
 in
-  {
-    inherit (installImage) channel tarball config;
-  }
+  with installImage;
+    [ tarball config channel ]
 ```
 
 to build the image.  The mechanics for deriving the version number can
@@ -419,7 +477,7 @@ useDHCP=1
 staticInterfaceFromDHCP=
 ```
 
-## Installer
+### <a name="installer"></a>Installer
 
 The installer currently supports only network boots of UEFI systems.
 The boot sequence is as follows.
@@ -546,7 +604,7 @@ installation, which performs the following actions.
      root partition (no need to change boot poriorities manually from
      the BIOS)
 
-### Multi-homed hosts
+#### Multi-homed hosts
 
 For multi-homed hosts, the Grub boot loader currently needs to be
 configured with the interface to use for booting.  The name of the
@@ -583,7 +641,7 @@ parameter, which is why there is a separate module option for it:
 Whatever is specified there will appear in the kernel command line
 `ip=:::::<interface>:dhcp::` in place of `<interface>`.
 
-### Module configuration
+#### Module configuration
 
 Pleas refer to the options declaration in `module/install-image.nix`
 for a full description of the available options.  Alternatively, you
@@ -595,6 +653,106 @@ nix-build module-manpages.nix -A installer && man result/share/man/man5/configur
 
 in the repository to get a summary as a pseudo-manpage.
 
+#### <a name="installerExamples"></a>Examples
+
+In the following examples, we assume that the current directory is a
+checkout of the `nixos-pxe-installer` repository.
+
+To create an installer with the default settings, put the following
+Nix expression in the file `default.nix`
+
+```
+{ system ? "x86_64-linux" }:
+
+with import <nixpkgs> { inherit system; };
+with lib;
+
+let
+
+  nfsroot = (import <nixpkgs/nixos/lib/eval-config.nix> {
+    inherit system;
+    modules = [ modules/installer-nfsroot.nix ];
+  }).config.system.build.nfsroot;
+
+in
+  with nfsroot;
+  [ nfsRootTarball bootLoader kernel ]
+```
+
+and execute `nix-build`, which will create the NFS root file system
+tarball, boot loader and Linux kernel in the Nix store paths pointed
+to by the symbolic links `result`, `result-2` and `result-3`, respectively
+
+```
+$ nix-build installer.nix
+/nix/store/kx60qw6065x246c4jmmmqh24qxr5sb1a-nfsroot
+/nix/store/xl4lr843c0m30vhraxpncn02jnhm6l5b-grub-efi-bootloader
+/nix/store/b3rld51kcz1kb5c97xk0kl1dmfp04m5s-linux-3.18.29
+
+$ ls -l result*
+lrwxrwxrwx 1 gall users 51 May 11 11:15 result -> /nix/store/kx60qw6065x246c4jmmmqh24qxr5sb1a-nfsroot
+lrwxrwxrwx 1 gall users 63 May 11 11:15 result-2 -> /nix/store/xl4lr843c0m30vhraxpncn02jnhm6l5b-grub-efi-bootloader
+lrwxrwxrwx 1 gall users 57 May 11 11:15 result-3 -> /nix/store/b3rld51kcz1kb5c97xk0kl1dmfp04m5s-linux-3.18.29
+
+$ ls result*
+result:
+nfsroot.tar.xz
+
+result-2:
+bootx64.efi  generate  grub.cfg
+
+result-3:
+bzImage  lib  System.map
+
+```
+
+To use custom settings, add an attribute set containing the desired option settings, e.g.
+
+```
+{ system ? "x86_64-linux" }:
+
+with import <nixpkgs> { inherit system; };
+with lib;
+
+let
+
+  installerConfig = {
+    nfsroot = {
+      bootLoader = {
+        efinetDHCPInterface = "efinet6";
+        linuxPnPInterface = "eth6";
+      };
+    };
+  };
+  nfsroot = (import <nixpkgs/nixos/lib/eval-config.nix> {
+    inherit system;
+    modules = [ modules/installer-nfsroot.nix
+                installerConfig ];
+  }).config.system.build.nfsroot;
+
+in
+  with nfsroot;
+  [ nfsRootTarball bootLoader kernel ]
+
+```
+
+#### <a name="bootLoaderManualUpdate"></a>Updating the Grub boot loader manually
+
+The preferred method for generaing the boot loader is through the
+`bootLoader` derivation of the `install-nfsroot.nix` module.  Apart
+from the boot loader itself (the file `bootx64.efi`), it also contains
+the source of the Grub configuration in the file `grub.cfg` and the
+shell script called `generate`, which was used to produce
+`bootx64.efi` from `grub.cfg`.
+
+The latter two files make it possible to generate a customised boot
+loader by editing `grub.cfg` and running `generate` on any system on
+which `grub-mkstandalone` with EFIx64 support is available.
+
+Caveat: the boot loader is tied to the NFS root file system through
+the `init=` kernel option in `grub.cfg`.  It is important to keep this
+option unchanged and always use the NFS root file system from the same
+run of `nix-build`.
 
 ## Appendix 
 ### <a name="appendixChannels"></a>Channels
