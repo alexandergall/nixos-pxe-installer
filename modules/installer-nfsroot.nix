@@ -109,6 +109,7 @@ let
         pkgs.dhcpcd
         pkgs.gnutar
         pkgs.xz
+        pkgs.gzip
         pkgs.kmod
         config.systemd.package
         config.system.build.nixos-generate-config
