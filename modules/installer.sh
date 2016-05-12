@@ -151,7 +151,7 @@ nixos-generate-config --root /mnt
 for o in $(cat /proc/cmdline); do
     case $o in
         ip=*)
-	    set -- $(IFS=:; for arg in $o; do if [ -n "$arg" ]; then echo $arg; else echo '""'; fi; done)
+            set -- $(IFS=:; for arg in $o; do if [ -n "$arg" ]; then echo $arg; else echo '""'; fi; done)
             interface=$6
             ;;
     esac
@@ -165,8 +165,10 @@ done
 
 ## This will be imported by /mnt/etc/nixos/networking.nix
 interfaces=/mnt/etc/nixos/networking/interfaces.nix
+dir=$(dirname $interfaces)
+[ -d $dir ] || mkdir -p $dir
 if [ -n "$useDHCP" ]; then
-        cat <<EOF >$interfaces
+    cat <<EOF >$interfaces
 { config, lib, pkgs, ... }:
 
 {
@@ -178,9 +180,9 @@ if [ -n "$useDHCP" ]; then
 EOF
 else
     if [ -z "$staticInterfaceFromDHCP" ]; then
-	informNotOk "Static interface configuration requested but " -n
-	informnNotOk "staticInterfaceFromDHCP missing"
-	exit 1
+        informNotOk "Static interface configuration requested but " -n
+        informnNotOk "staticInterfaceFromDHCP missing"
+        exit 1
     fi
     informOk "Creating static network configuration for interface " -n
     informOk "$staticInterfaceFromDHCP from DHCP"
