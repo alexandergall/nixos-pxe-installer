@@ -81,9 +81,9 @@ let
           { preferLocalBuild = true;
             inherit nixpkgs;
             buildInputs = [ pkgs.git ];
-	    ## Force execution for every invocation because there
-	    ## is no easy way to detect when the Git rev has changed.
-	    dummy = builtins.currentTime; }
+            ## Force execution for every invocation because there
+            ## is no easy way to detect when the Git rev has changed.
+            dummy = builtins.currentTime; }
           ''
             ## Note: older versions of git require write access to the parent's
             ## .git hierarchy for submodules.  This will lead to breakage here
@@ -121,9 +121,30 @@ let
       inherit (cfg) binaryCacheURL;
     };
 
-  tarball = import ../lib/make-install-image.nix rec {
+  tarball = let
+    defaultNixosConfigDir = runCommand "nixos-default-config"
+      {}
+      ''
+        mkdir $out
+        echo "{}" >$out/hardware-configuration.nix
+        cat <<"EOF" >$out/configuration.nix
+        { config, pkgs, ... }:
+        {
+          imports = [ ./hardware-configuration.nix ];
+
+          boot.kernelParams = [ "console=ttyS0,115200n8" ];
+          boot.loader.gummiboot.enable = true;
+          boot.loader.efi.canTouchEfiVariables = true;
+
+          ## Default root password is "root"
+          users.mutableUsers = false;
+          users.extraUsers.root.hashedPassword = "$6$cSUnFL6MbD34$BaS0NLN1KCddegCaTKDMCc1D21Pdge9gFz5tr65U0KgNOgtrEoAGuVnelaPIuEb7iC0FOWE7HUG6NV2b2yN8s/";
+        }
+        EOF
+      '';
+  in import ../lib/make-install-image.nix (rec {
     inherit pkgs lib channel;
-    inherit (cfg) nixosConfigDir additionalPkgs system;
+    inherit (cfg) additionalPkgs system;
     tarballName = "nixos.tar.gz";
     memSize = 4096;
 
@@ -131,7 +152,10 @@ let
       ''
         mv xchg/${tarballName} $out
       '';
-  };
+  } // (if (cfg.nixosConfigDir != null) then
+         { inherit (cfg) nixosConfigDir; }
+       else
+         { nixosConfigDir = toPath defaultNixosConfigDir; }));
 
   installConfig = runCommand "install-config"
     {}
@@ -166,9 +190,9 @@ in
           present.  It will be created during the installation process, overwriting
           any existing file.
 
-          If the option is null, an empty configuration directory will be created and
-          populated with a default configuration by "nixos-generate-config" when the
-          client system is installed.
+          If the option is null, a minimalistic default configuration is generated, which
+          selects gummibbot as boot loader and sets the root password to "root". Logins
+          are only possible on the console.
         '';
       };
 
