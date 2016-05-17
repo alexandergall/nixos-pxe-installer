@@ -127,10 +127,28 @@ let
       ''
         mkdir $out
         echo "{}" >$out/hardware-configuration.nix
+        mkdir $out/networking
+        cat <<"EOF" >$out/networking/default.nix
+        { config, lib, pkgs, ... }:
+
+        {
+          imports = [ ./interfaces.nix ];
+        }
+        EOF
+
+        cat <<"EOF" >$out/networking/interfaces.nix
+        { config, lib, pkgs, ... }:
+
+        {
+          networking.useDHCP = true;
+        }
+        EOF
+
         cat <<"EOF" >$out/configuration.nix
         { config, pkgs, ... }:
         {
-          imports = [ ./hardware-configuration.nix ];
+          imports = [ ./hardware-configuration.nix
+                      ./networking ];
 
           boot.kernelParams = [ "console=ttyS0,115200n8" ];
           boot.loader.gummiboot.enable = true;
@@ -192,7 +210,8 @@ in
 
           If the option is null, a minimalistic default configuration is generated, which
           selects gummibbot as boot loader and sets the root password to "root". Logins
-          are only possible on the console.
+          are only possible on the console.  DHCP is enabled for all interfaces, but this
+          behaviour can be overridden by the <option>networking</option> options.
         '';
       };
 
