@@ -1,25 +1,19 @@
-# This module creates three derivations:
+# This module creates two derivations:
 #
-#   A tarball containing a file system tree that can be mounted
-#   as (read-only) root file system via NFS
+#   A tarball containing a file system tree that can be mounted as
+#   (read-only) root file system via NFS
 #
-#   A GRUB boot loader image that can be served to a PXE client
-#
-#   A kernel that will be loaded by the boot loader, which will
-#   mount the NFS root file system and execute the NixOS
-#   installation on the client system.
+#   A tarball containing a GRUB EFI boot loader image and
+#   configuration files that can be served to a PXE client together
+#   with a Linux image used to mount the NFS root file system.
 
 { config, lib, pkgs, ... }:
 
 with lib;
 
 let
-  efinetIf = config.nfsroot.bootLoader.efinetDHCPInterface;
-  linuxIf = config.nfsroot.bootLoader.linuxPnPInterface;
 
   ## FIXME: make serial console configurable
-  ## FIXME: make this work with interface auto-discovery
-  ## FIXME: make "serial" config configurable
   ## FIXME: support legacy (non-EFI) systems
   grubConfig = pkgs.writeText "grub.cfg"
     ''
@@ -27,48 +21,55 @@ let
       terminal_input serial
       terminal_output serial
       set timeout=5
-      menuentry "NixOS Installation" {
-        insmod net
-        insmod efinet
-        insmod tftp
-        echo "Available interfaces: "
-        net_ls_cards
-        echo ""
-        echo "Booting from ${efinetIf}"
-        net_bootp ${efinetIf}
-
-        ## Set net_default_server from the "TFTP Server" DHCP Option (#66)
-        net_get_dhcp_option net_default_server ${efinetIf}:dhcp 66 string
-
-        ## Some GRUB versions created  bogus routes, presumably from the
-        ## DHCP relay address.  Removing them is safe even if the bug no
-        ## longer exists.
-        net_del_route ${efinetIf}:dhcp:gw
-        net_del_route ${efinetIf}:dhcp
+      menuentry "NixOS Automated Network Installation" {
         echo "Network status: "
         net_ls_addr
         net_ls_routes
 
-        echo ""
-        echo "Fetching kernel from tftp://$net_default_server/nixos/bzImage ..."
-        linux  (tftp)nixos/bzImage console=ttyS0,115200n8 ip=:::::${linuxIf}:dhcp:: root=/dev/nfs init=${nfsrootSetup}
-        echo Done.
+        echo "Checking for $prefix/load-kernel-$net_default_mac.cfg"
+        configfile $prefix/load-kernel-$net_default_mac.cfg
+
+        echo "Checking for $prefix/load-kernel-$net_default_ip.cfg"
+        configfile $prefix/load-kernel-$net_default_ip.cfg
+
+        eval set hostname=\$net_''${net_default_interface}_hostname
+        if test $hostname != ""; then
+          echo "Checking for $prefix/load-kernel-$hostname.cfg"
+          configfile $prefix/load-kernel-$hostname.cfg
+        fi
+
+        echo "Checking for $prefix/load-kernel.cfg"
+        configfile $prefix/load-kernel.cfg
       }
+    '';
+
+  grubLoadKernel = pkgs.writeText "load-kernel.cfg"
+    ''
+        echo "load-kernel.cfg: loading kernel $prefix/bzImage ..."
+        linux  $prefix/bzImage console=ttyS0,115200n8 ip=::::::dhcp:: root=/dev/nfs init=${nfsrootSetup}
+        boot
     '';
 
   generateLoader = pkgs.writeScript "generate-bootloader"
     ''
-      grub-mkstandalone -O x86_64-efi -o ./bootx64.efi \
-        --install-modules="net efinet tftp normal echo linux" boot/grub/grub.cfg=./grub.cfg
+      grub-mkimage -O x86_64-efi -o ./bootx64.efi -p '(tftp)' \
+        serial terminal net efinet tftp normal echo eval test linux configfile reboot
     '';
+
+  kernel = pkgs.linux_latest;
   bootLoader = pkgs.runCommand "grub-efi-bootloader"
     { buildInputs = [ pkgs.grub2_efi ]; }
     ''
+      tmp=$TMPDIR/stage
+      mkdir $tmp
+      cp ${grubConfig} $tmp/grub.cfg
+      cp ${grubLoadKernel} $tmp/load-kernel.cfg
+      cp ${generateLoader} $tmp/generate
+      cp ${kernel}/bzImage $tmp
+      chmod a+x $tmp/generate
+      (cd $tmp && ./generate)
       mkdir $out
-      cp ${grubConfig} $out/grub.cfg
-      cp ${generateLoader} $out/generate
-      chmod a+x $out/generate
-      cd $out && ./generate
+      (cd $tmp && tar cf $out/boot-loader.tar.xz *)
     '';
 
   # Make the read-only NFS root writeable via unionfs-fuse
@@ -99,20 +100,23 @@ let
   installer = pkgs.substituteAll {
     src = ./installer.sh;
     isExecutable = true;
-    path =
-      [ pkgs.coreutils
-        pkgs.parted
-        pkgs.dosfstools
-        pkgs.e2fsprogs
-        pkgs.utillinux
-        pkgs.gnugrep
-        pkgs.dhcpcd
-        pkgs.gnutar
-        pkgs.xz
-        pkgs.gzip
-        pkgs.kmod
+    path = with pkgs;
+      [ coreutils
+        iproute
+        gawk
+        parted
+        dosfstools
+        e2fsprogs
+        utillinux
+        gnugrep
+        dhcpcd
+        gnutar
+        xz
+        gzip
+        kmod
         config.systemd.package
         config.system.build.nixos-generate-config
+        config.system.build.nixos-enter
       ];
       inherit (pkgs) nix;
       systemd = config.systemd.package;
@@ -125,7 +129,7 @@ let
         "efivars" "efivarfs"
       ];
       inherit dhcpcHook;
-      inherit (config.system.build.nfsroot) kernel;
+      inherit kernel;
   };
 in
 
@@ -133,24 +137,6 @@ in
 
   options = {
     nfsroot = {
-      bootLoader = {
-        efinetDHCPInterface = mkOption {
-          default = "efinet0";
-          description = ''
-            The EFI interface that will be used by the PXE boot loader
-            to perform DHCP and transfer the kernel via TFTP.
-          '';
-        };
-        linuxPnPInterface = mkOption {
-          default = "eth0";
-          description = ''
-            The interface that will be used by the kernel obtained by
-            the PXE boot loader to perform DHCP and mount the NFS root
-            file system.
-          '';
-        };
-      };
-
       extraKernelOptions = mkOption {
         default = "";
         example = "IXGB y IXGBE y";
@@ -221,7 +207,7 @@ in
     # FIXME: remove unneeded features to make the thing smaller
     nixpkgs.config = {
       packageOverrides = p: rec {
-        linux_3_18 = p.linux_3_18.override {
+        linux_latest = p.linux_latest.override {
           extraConfig = ''
             # Enable some network drivers
             IGB y
@@ -252,15 +238,12 @@ in
       };
     };
 
-    # Create the nfsroot tarball, boot loader and
-    # bootable kernel.
     system.build.nfsroot = {
       nfsRootTarball = import ../lib/make-nfsroot.nix ({
         inherit (pkgs) stdenv perl pathsFromGraph;
         inherit (config.nfsroot) contents storeContents;
       });
       inherit bootLoader;
-      kernel = pkgs.linux_3_18;
     };
   };
 }

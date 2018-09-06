@@ -10,11 +10,12 @@ let
     modules = [ ./modules/install-image.nix
                 ./modules/installer-nfsroot.nix ];
   });
-  manpage = options: (import <nixpkgs/nixos/doc/manual> {
+  manpage = options: (import <nixpkgs/nixos/doc/manual> rec {
     inherit pkgs;
-    version = eval.config.system.nixosVersion;
-    revision = eval.config.system.nixosRevision;
-    options = options;
+    inherit (eval) config;
+    inherit options;
+    version = eval.config.system.nixos.release;
+    revision = "release-${version}";
   }).manpages;
 
 in

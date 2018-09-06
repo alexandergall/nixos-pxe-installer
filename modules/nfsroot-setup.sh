@@ -35,7 +35,7 @@ mount --bind / /unionfs/root
 unionfs -o cow,nonempty,dev,allow_other,use_ino,max_files=32768,chroot=/unionfs /rw=rw:/root=ro $targetRoot
 cd $targetRoot
 mkdir oldroot
-## Mathe the unified fs the root
+## Make the unified fs the root
 pivot_root . oldroot
 ## Mount some essential stuff in the new root
 mount --move /oldroot/dev dev
