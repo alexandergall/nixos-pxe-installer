@@ -59,18 +59,9 @@ let
   ## Nix store.
   nixpkgs = readlink (toPath cfg.nixpkgs.path);
   channel =
-    if isStorePath (dirOf nixpkgs) then
+    if pathExists (nixpkgs + "/.git") then
       let
-        storePath = dirOf nixpkgs;
-      in
-        if (pathExists (storePath + "/nixos") &&
-             pathExists (storePath + "/binary-caches/nixos")) then
-           { outPath = storePath; }
-        else
-          throw "${nixpkgs} does not appear to be a channel named \"nixos\""
-    else
-      let
-        nixpkgsRevs = if pathExists (nixpkgs + "/.git") then
+        nixpkgsRevs =
           import (runCommand "get-rev-count"
             { preferLocalBuild = true;
               inherit nixpkgs;
@@ -88,9 +79,7 @@ let
               revCount=$($git rev-list $revision | wc -l)
               shortRev=$($git rev-parse --short $revision)
               echo "{ revCount = $revCount; shortRev = \"$shortRev\"; }" >$out
-            '')
-          else
-            throw "${storePath nixpkgs} appears to be neither a NixOS channel nor a Git repository";
+            '');
 
         ## We use the mechanism provided by the standard NixOS
         ## release.nix to create a tar archive of the nixpkgs directory
@@ -113,7 +102,20 @@ let
         name = "${releaseName}";
         src = channelTarPath;
         inherit (cfg) binaryCacheURL;
-      };
+      }
+
+    else
+      if isStorePath (dirOf nixpkgs) then
+        let
+          storePath = dirOf nixpkgs;
+        in
+          if (pathExists (storePath + "/nixos") &&
+               pathExists (storePath + "/binary-caches/nixos")) then
+             { outPath = storePath; }
+          else
+            throw "${nixpkgs} does not appear to be a channel named \"nixos\""
+      else
+        throw "${nixpkgs} is neither a store path nor a Git repository";
 
   tarball = let
     defaultNixosConfigDir = runCommand "nixos-default-config"
