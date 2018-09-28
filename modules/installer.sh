@@ -156,7 +156,7 @@ informOk "Unpacking image $installImg..." -n
 (cd /mnt && tar xapf $installImg)
 chown -R 0:0 /mnt
 informOk "done"
-mkdir -m 1755 /mnt/tmp
+mkdir -m 1777 /mnt/tmp
 ## Make the resolver config available in the chroot
 cp /etc/resolv.conf /mnt
 
