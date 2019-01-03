@@ -21,66 +21,62 @@ with builtins;
 let
 
   ## Construct a derivation that contains the nixos channel from the
-  ## nixpkgs expression provided by installImage.nixpkgs.path.  If
-  ## that directory is a store path, make sure that it contains the
-  ## "nixos" channel or bail out.  The URL for the binary cache
-  ## assiciated with the channel is preserved.
+  ## nixpkgs expression provided by installImage.nixpkgs.path, which
+  ## needs to be a store path.
   ##
-  ## If the directory is not a store path, check whether it is a Git
-  ## repository and bail out if it isn't.  Otherwise we assume that it
-  ## is a checkout that contains some version of nixpkgs and construct
+  ## If the store path is a Git repository, assume that it is a
+  ## checkout of some version of the nixpkgs repository and construct
   ## the "revCount" and "shortRev" attributes for HEAD just like hydra
-  ## would for an input of type "Git checkout".  Then create a pseudo
-  ## derivation of nixpkgs from it, suitable for passing to
+  ## would for an input of type "Git checkout".  Then call
   ## nixos/release.nix to produce a source tarball of that particular
   ## nixpkgs expression containing the proper .version-suffix file.
-  ## This tarball is then run through <nix/unpack-channel.nix> to
-  ## produce a derivation containing a regular channel named "nixos".
-  ## The URL of the binary cache associated with this channel is taken
-  ## from the configuration option installImage.binaryCacheURL.
   ##
-  ## In either case we end up with a derivation for a channel named
-  ## "nixos", which contains the relevant nixpkgs source and will be
-  ## installed on the target system as the initial channel.
+  ## If the store path is not a Git repository, assume that it is the
+  ## nixpkgs directory from an exisiting channel and pack it up in a
+  ## tarball as if it had been created by nix/release.nix.
+  ##
+  ## In either case, the tarball is then run through
+  ## <nix/unpack-channel.nix> to produce a derivation containing a
+  ## regular channel named "nixos".  The URL of the binary cache
+  ## associated with this channel is taken from the configuration
+  ## option installImage.binaryCacheURL.
 
   cfg = config.installImage;
-  readlink = path:
-    import (runCommand "readlink"
-      { preferLocalBuild = true;
-        buildInputs = [ pkgs.coreutils ];
-      }
+  nixpkgs = cfg.nixpkgs.path;
+    isGitRepo = path: import (runCommand "is-git-repo" {}
       ''
-        echo "builtins.toPath $(readlink -f ${path})" >$out
+	if [ -d ${path} -a -d ${path}/.git ]; then
+	  echo true >$out
+	else
+	  echo false >$out
+	fi
       '');
-
-  ## <nixpkgs> may evaluate to a path like
-  ## "/nix/var/nix/profiles/per-user/root/channels/nixos/nixpkgs"
-  ## Application of "readlink -f" reveals the actual location in the
-  ## Nix store.
-  nixpkgs = readlink (toPath cfg.nixpkgs.path);
-  channel =
-    if pathExists (nixpkgs + "/.git") then
+  channelInfo =
+    ## This set contains two attributes:
+    ##   src: a tarball of a properly versioned nixpkgs directory as required
+    ##        for a proper channel
+    ##   name: the name of the release as passed to <nix/unpack-channel.nix>,
+    ##         which simply ignores it, though
+    if isGitRepo nixpkgs then
       let
-        nixpkgsRevs =
-          import (runCommand "get-rev-count"
-            { preferLocalBuild = true;
-              inherit nixpkgs;
-              buildInputs = [ pkgs.git ];
-              ## Force execution for every invocation because there
-              ## is no easy way to detect when the Git rev has changed.
-              dummy = builtins.currentTime; }
-            ''
-              ## Note: older versions of git require write access to the parent's
-              ## .git hierarchy for submodules.  This will lead to breakage here
-              ## with the nix build-user without write permissions
-              git=${git}/bin/git
-              cd ${nixpkgs}
-              revision=$($git rev-list --max-count=1 HEAD)
-              revCount=$($git rev-list $revision | wc -l)
-              shortRev=$($git rev-parse --short $revision)
-              echo "{ revCount = $revCount; shortRev = \"$shortRev\"; }" >$out
-            '');
-
+        nixpkgsRevs = import (runCommand "get-rev-count"
+          { preferLocalBuild = true;
+            inherit nixpkgs;
+            buildInputs = [ pkgs.git ];
+            ## Force execution for every invocation because there
+            ## is no easy way to detect when the Git rev has changed.
+            dummy = builtins.currentTime; }
+          ''
+            ## Note: older versions of git require write access to the parent's
+            ## .git hierarchy for submodules.  This will lead to breakage here
+            ## with the nix build-user without write permissions
+            git=${git}/bin/git
+            cd ${nixpkgs}
+            revision=$($git rev-list --max-count=1 HEAD)
+            revCount=$($git rev-list $revision | wc -l)
+            shortRev=$($git rev-parse --short $revision)
+            echo "{ revCount = $revCount; shortRev = \"$shortRev\"; }" >$out
+          '');
         ## We use the mechanism provided by the standard NixOS
         ## release.nix to create a tar archive of the nixpkgs directory
         ## including proper versioning.  The tarball containing the
@@ -91,31 +87,36 @@ let
           nixpkgs = { outPath = nixpkgs; inherit (nixpkgsRevs) revCount shortRev; };
           inherit (cfg.nixpkgs) stableBranch;
         }).channel;
+      in
         ## Construct the full path to the tarball in the Nix store and derive the
         ## name of the release from it
-        channelTarPath = builtins.unsafeDiscardStringContext (channelSrc + "/tarballs/"
-          + (head (attrNames (readDir (channelSrc + "/tarballs")))));
-        releaseName = removeSuffix ".tar.xz" (baseNameOf channelTarPath);
-
-      in import <nix/unpack-channel.nix> {
-        channelName = "nixos";
-        name = "${releaseName}";
-        src = channelTarPath;
-        inherit (cfg) binaryCacheURL;
-      }
-
+        rec { src = channelSrc + "/tarballs/"
+                    + (head (attrNames (readDir (channelSrc + "/tarballs"))));
+              name = removeSuffix ".tar.xz" (baseNameOf (builtins.unsafeDiscardStringContext src)); }
     else
-      if isStorePath (dirOf nixpkgs) then
-        let
-          storePath = dirOf nixpkgs;
-        in
-          if (pathExists (storePath + "/nixos") &&
-               pathExists (storePath + "/binary-caches/nixos")) then
-             { outPath = storePath; }
-          else
-            throw "${nixpkgs} does not appear to be a channel named \"nixos\""
-      else
-        throw "${nixpkgs} is neither a store path nor a Git repository";
+      ## Assume this is nixpkgs from an existing channel.
+      let
+        path = storePath nixpkgs;
+        version = fileContents (path + "/.version");
+        versionSuffix = fileContents (path + "/.version-suffix");
+        releaseName = "nixos-" + version + versionSuffix;
+      in
+        { src = (runCommand "make-tarball" {}
+            ''
+              mkdir -p $out/${releaseName}
+              cd $out
+              cp -prd ${path}/. ${releaseName}
+              tar cfJ $out/${releaseName}.tar.xz ${releaseName}
+            '') + "/" + releaseName + ".tar.xz";
+          name = releaseName; };
+
+  ## This will be passed as the "--channel" argument to
+  ## "nixos-install" in ../lib/make-install-image.nix
+  channel = import <nix/unpack-channel.nix> {
+    channelName = "nixos";
+    inherit (channelInfo) src name;
+    inherit (cfg) binaryCacheURL;
+  };
 
   tarball = let
     defaultNixosConfigDir = runCommand "nixos-default-config"
@@ -216,14 +217,13 @@ in
           type = types.path;
           default = <nixpkgs>;
           example = literalExample ''
-            nixpkgs.path = ./nixpkgs
+            nixpkgs.path = builtins.path { path = ./nixpkgs; };
           '';
           description = ''
-            The path to a directory that contains a complete nixpkgs source tree from
-            which the configuration of the install client is derived.  This can either be
-            an existing NixOS channel named "nixos" or a checkout of a Git repository.
-            The latter will be transformed into a channel named "nixos" before further
-            processing.
+	    A store path that contains a complete nixpkgs source tree
+            from which the configuration of the install client is
+            derived.  This can either be an existing NixOS channel
+            named or a checkout of a Git repository.
           '';
         };
         stableBranch = mkOption {
@@ -274,11 +274,8 @@ in
         type = types.str;
         default = https://cache.nixos.org/;
         description = ''
-          The URL of the binary cache to register for the nixos channel of the
-          system if the channel is derived from a Git checkout.  This
-          option is ignored if <option>nixpkgs.path</option> refers
-          to an existing channel.  In that case, the URL of the binary cache of
-          that channel is preserved.
+          The URL of the binary cache to register for the nixos channel derived from
+          <option>nixpkgs.path</option>.
         '';
       };
 

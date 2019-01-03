@@ -301,9 +301,9 @@ The main ingredients to the creation of an install image are a copy of
 a `nixpkgs` source tree and a NixOS configuration directory structured
 like `/etc/nixos`.
 
-The `nixpkgs` source tree can either be a NixOS *channel* named
-`nixos` or a checkout of the `nixpkgs` Git repository, which will be
-transformed into such a channel by the module.  Please refer to the
+The `nixpkgs` source tree can either be a NixOS *channel* or a
+checkout of the `nixpkgs` Git repository, which will be transformed
+into such a channel by the module.  Please refer to the
 [appendix](#appendixChannels) for details.
 
 #### Module configuration
@@ -431,7 +431,7 @@ with import <nixpkgs> {};
 let
   installImageConfig = {
     installImage = {
-      nixpkgs.path = ./nixpkgs;
+      nixpkgs.path = builtins.path { path = ./nixpkgs; };
     };
   };
   installImage = (import <nixpkgs/nixos/lib/eval-config.nix> {
@@ -443,7 +443,36 @@ in
     [ tarball config ]
 ```
 
-to build the image.
+to build the image.  Note that `nixpkgs.path` must be an object in the
+Nix store.  In this case, the Git repository, which resides at an
+arbitrary location on the local file system, is copied to the Nix
+store through the builtin function `path`. Alterantively, once could
+also specify the Git repository itself as the source of the `nixpkgs`
+tree.  The following Nix expression is equivalent (at the time of
+writing) to the above
+
+```
+with import <nixpkgs> {};
+
+let
+  installImageConfig = {
+    installImage = {
+      nixpkgs.path = fetchgit {
+        url = "https://github.com/NixOS/nixpkgs.git";
+        leaveDotGit = true;
+        rev = "refs/heads/release-18.03";
+        sha256 = "1hahhmnsyhgg20mvf7a5p0y2y5lazs7jnz2lf5gw95pdx56aa6rz";
+      };
+    };
+  };
+  installImage = (import <nixpkgs/nixos/lib/eval-config.nix> {
+    modules = [ modules/install-image.nix
+                installImageConfig ];
+  }).config.system.build.installImage;
+in
+  with installImage;
+    [ tarball config ]
+```
 
 ### <a name="installer"></a>Installer
 
@@ -678,7 +707,9 @@ nixos https://nixos.org/channels/nixos-18.03
 ```
 
 Instantiation of the channel results in the creation of a new
-generation of the root user's profile called `channels`:
+generation of the root user's profile called `channels` (the file
+`manifest.nix` is irrelevant in this context and is actually no longer
+used by newer releases of NixOS):
 
 ```
 # ls -l /nix/var/nix/profiles/per-user/root/channels/
@@ -741,18 +772,22 @@ $ echo $NIX_PATH
 /nix/var/nix/profiles/per-user/root/channels/nixos:nixos-config=/etc/nixos/configuration.nix:/nix/var/nix/profiles/per-user/root/channels
 ```
 
-For this reason, the `install-image.nix` module requires a channel
-named `nixos` as input.
+The `install-image.nix` module takes a file system tree that holds a
+copy of a `nixpkgs` hierarchy and turns it into a channel.  The
+hierarchy can either be the `nixpkgs` directory from an exsting
+channel or a checkout of the `NixOS/nixpkgs` Git repository.
 
-Apart from referring to an existing channel, `install-image.nix` can
-also be called with a reference to a directory that contains a
-checked-out version of a Git repository of the `nixpkgs` source tree.
-The main differences (apart from the Git-specific files) with respect
-to a channel as defined above are the following
+The former is usually obtained from the channel of the local system
+through the Nix path `<nixpkgs>`.  To construct a channel from it, one
+only needs to create the directory structure described above, copy the
+`nixpkgs` directory inot it and add the `binary-cache` given by the 
+`installImage.binaryCacheURL` configuration option.
 
-   * Missing `.version-suffix`
-   * No reference to a channel name
-   * No reference to a binary cache
+If the input is a Git repository, it must first be transformed into a
+proper `nixpkgs` tree as follows.  The main difference (apart from the
+Git-specific files) with respect to a `nixpkgs` directory from a
+channel is the absence of the file `.version-suffix` and a missing
+symbolic in the top-level directory.
 
 The file `.version-suffix`, together with `.version`, makes up the
 full version identifier of a NixOS system:
@@ -811,8 +846,12 @@ the Hydra system:
    * Calculate `revCount` and `shortRev` from the Git repository
    * Create a properly versioned archive by calling
      `<nixpkgs/nixos/lib/make-channel.nix>`
-   * Create the actual channel by calling `<nix/unpack-channel.nix>`
-     with channel name `nixos`
 
-In the last step, a binary cache URL supplied to `install-image.nix`
-is added to the channel as well.
+In any case, we'll end up with a tar archive containing a properly
+versioned `nixpkgs` hierarchy.  In the final step, the channel itself
+is created by evaluating the Nix expression
+`<nix/unpack-channel.nix>`, which creates the `nixos` and
+`binary-caches` directories and populates them in a new store object.
+
+This channel will eventually be installed as the initial channel of a
+system that gets installed from this install image.
