@@ -125,6 +125,8 @@ try_config config
 informOk "...custom configuration done"
 
 dev=$rootDevice
+part1=${rootDevice}${partitionSeparator}1
+part2=${rootDevice}${partitionSeparator}2
 
 informOk "Installing NixOS on device $dev"
 
@@ -142,15 +144,15 @@ informOk "done"
 informOk "Creating file systems..."
 ## Enable checking of mounted file systems
 ln -s /proc/mounts /etc/mtab
-mkfs.vfat ${dev}1
-mkfs.ext4 -q -F -L nixos ${dev}2
+mkfs.vfat ${part1}
+mkfs.ext4 -q -F -L nixos ${part2}
 informOk "...file systems done"
 
 informOk "Installing NixOS"
 mkdir /mnt
-mount ${dev}2 /mnt
+mount ${part2} /mnt
 mkdir /mnt/boot
-mount ${dev}1 /mnt/boot
+mount ${part1} /mnt/boot
 
 informOk "Unpacking image $installImg..." -n
 (cd /mnt && tar xapf $installImg)

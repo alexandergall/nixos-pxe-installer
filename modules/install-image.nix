@@ -45,11 +45,11 @@ let
   nixpkgs = cfg.nixpkgs.path;
     isGitRepo = path: import (runCommand "is-git-repo" {}
       ''
-	if [ -d ${path} -a -d ${path}/.git ]; then
-	  echo true >$out
-	else
-	  echo false >$out
-	fi
+        if [ -d ${path} -a -d ${path}/.git ]; then
+          echo true >$out
+        else
+          echo false >$out
+        fi
       '');
   channelInfo =
     ## This set contains two attributes:
@@ -184,6 +184,7 @@ let
       mkdir $out
       cat >$out/config <<EOF
       rootDevice=${cfg.rootDevice}
+      partitionSeparator=${cfg.partitionSeparator}
       EOF
     '';
 in
@@ -220,7 +221,7 @@ in
             nixpkgs.path = builtins.path { path = ./nixpkgs; };
           '';
           description = ''
-	    A store path that contains a complete nixpkgs source tree
+            A store path that contains a complete nixpkgs source tree
             from which the configuration of the install client is
             derived.  This can either be an existing NixOS channel
             named or a checkout of a Git repository.
@@ -286,6 +287,18 @@ in
           will use the entire disk for the NixOS system.  It creates two partitions,
           one of type VFAT to hold the EFI boot files of size 512MiB, the other of type
           EXT4 to hold the NixOS system.  The disk will be overwritten unconditionally.
+        '';
+      };
+
+      partitionSeparator = mkOption {
+        default = "";
+        description = ''
+          The traditional convention for device names of disk partitions is to
+          append a number to the name of the device, e.g. /dev/sda1, /dev/sda2.  Some
+          devices started to use numbers in their names, making this scheme ambiguous.
+          The solution is to insert a letter between the device name and the partition
+          number, usually 'p'.  The <option>partitionSeparator</option> makes this
+          configurable for the rootDevice.
         '';
       };
 
