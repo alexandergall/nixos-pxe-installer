@@ -348,6 +348,9 @@ attribute set `config.system.build.installImage`
       
        * The device on which to install the root file system of the
          install client (`installImage.rootDevice`)
+       * The character used to separate the partition number from the device
+         name (`installImage.partitionSeparator`, defaults to an empty
+         string)
 
 The `tarball` and `config` derivations each contain a single file
 called `nixos.tar.gz` and `config`, respectively.  These files need to
@@ -459,7 +462,7 @@ let
     installImage = {
       nixpkgs.path = fetchgit {
         url = "https://github.com/NixOS/nixpkgs.git";
-        leaveDotGit = true;
+        deepClone = true;
         rev = "refs/heads/release-18.03";
         sha256 = "1hahhmnsyhgg20mvf7a5p0y2y5lazs7jnz2lf5gw95pdx56aa6rz";
       };
@@ -473,6 +476,16 @@ in
   with installImage;
     [ tarball config ]
 ```
+
+The attribute `deepClone = true` is required to fetch the entire
+history of the repository, which is necessary to determine the version
+number via `git rev-list` as explained in the
+[appendix](#appendixChannels).  Unfortunately, this takes a very long
+time because `fetchgit` performs a `git repack` in an attempt to
+create a deterministic Git repository (i.e. keep the `sha256` hash
+constant for each invocation of a `fetchgit` of the same Git
+revision).  Also, it appears that it is not as deterministic as it
+should be, i.e. the hash value may depend on the Git version.
 
 ### <a name="installer"></a>Installer
 
