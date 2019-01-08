@@ -95,11 +95,17 @@ let
   activationPkgs = with channelPkgs; [
     stdenv
     stdenvNoCC
+    busybox
     binutils
     libxslt
     kmodBlacklistUbuntu
     config.system.build.bootStage1
     config.system.build.bootStage2
+    ## More odd packages seen to be needed on some systems.
+    nukeReferences
+    desktop-file-utils
+    texinfo
+    xorg.lndir
   ];
   nixosConfig = pkgs.runCommand "nixos-configuration" {}
     ''
