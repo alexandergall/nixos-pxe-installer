@@ -687,6 +687,33 @@ result-2:
 boot-loader.tar.xz
 ```
 
+The following example sets the unit of the serial device used by
+the boot loader and the kernel to 1
+```
+{ system ? "x86_64-linux" }:
+
+with import <nixpkgs> { inherit system; };
+with lib;
+
+let
+
+  installerConfig = {
+    nfsroot.serial = {
+      unit = 1;
+    };
+  };
+
+  nfsroot = (import <nixpkgs/nixos/lib/eval-config.nix> {
+    inherit system;
+    modules = [ modules/installer-nfsroot.nix
+                installerConfig ];
+  }).config.system.build.nfsroot;
+
+in
+  with nfsroot;
+  [ nfsRootTarball bootLoader ]
+```
+
 #### <a name="bootLoaderManualUpdate"></a>Updating the Grub boot loader manually
 
 The preferred method for generaing the boot loader is through the

@@ -13,11 +13,13 @@ with lib;
 
 let
 
-  ## FIXME: make serial console configurable
+  serialCfg = config.nfsroot.serial;
   ## FIXME: support legacy (non-EFI) systems
-  grubConfig = pkgs.writeText "grub.cfg"
+  grubConfig =  let
+    parity = { n = "no"; e = "even"; o = "odd"; }."${serialCfg.parity}";
+  in pkgs.writeText "grub.cfg"
     ''
-      serial --speed=115200 --unit=0 --word=8 --parity=no --stop=1
+      serial --speed=${toString serialCfg.speed} --unit=${toString serialCfg.unit} --word=${toString serialCfg.data} --parity=${parity} --stop=${toString serialCfg.stop}
       terminal_input serial
       terminal_output serial
       set timeout=5
@@ -43,10 +45,13 @@ let
       }
     '';
 
-  grubLoadKernel = pkgs.writeText "load-kernel.cfg"
+  grubLoadKernel = let
+    tty = "ttyS${toString serialCfg.unit}";
+    consoleConfig = "${toString serialCfg.speed}${serialCfg.parity}${toString serialCfg.data}";
+  in  pkgs.writeText "load-kernel.cfg"
     ''
         echo "load-kernel.cfg: loading kernel $prefix/bzImage ..."
-        linux  $prefix/bzImage console=ttyS0,115200n8 ip=::::::dhcp:: root=/dev/nfs init=${nfsrootSetup}
+        linux  $prefix/bzImage console=${tty},${consoleConfig} ip=::::::dhcp:: root=/dev/nfs init=${nfsrootSetup}
         boot
     '';
 
@@ -186,6 +191,50 @@ in
           should be created.
         '';
       };
+
+      serial = {
+        unit = mkOption {
+          type = types.int;
+          default = 0;
+          description = ''
+            The unit number of the serial device to use for the boot loader and
+            the kernel console.
+          '';
+        };
+
+        speed = mkOption {
+          type = types.int;
+          default = 115200;
+          description = ''
+            The baud rate.
+          '';
+        };
+
+        parity = mkOption {
+          type = types.enum [ "n" "o" "e" ];
+          default = "n";
+          description = ''
+            The parity.
+          '';
+        };
+
+        data = mkOption {
+          type = types.int;
+          default = 8;
+          description = ''
+            The number of data bits.
+          '';
+        };
+
+        stop = mkOption {
+          type = types.int;
+          default = 1;
+          description = ''
+            The number of stop bits.
+          '';
+        };
+      };
+
     };
   };
 
