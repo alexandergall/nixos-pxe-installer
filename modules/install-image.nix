@@ -159,7 +159,7 @@ let
           imports = [ ./hardware-configuration.nix
                       ./networking ];
 
-          boot.kernelParams = [ "console=ttyS0,115200n8" ];
+          boot.kernelParams = with import ./serial-config.nix; [ "console=ttyS''${serialUnit},''${linuxConsoleConfig}" ];
           boot.loader.systemd-boot.enable = true;
           boot.loader.efi.canTouchEfiVariables = true;
 
@@ -173,6 +173,13 @@ let
     inherit pkgs lib channel;
     inherit (cfg) additionalPkgs system;
     tarballName = "nixos.tar.gz";
+    serialConfig = writeText "serial-config"
+      ''
+        {
+          serialUnit = "${toString cfg.serial.unit}";
+          linuxConsoleConfig = "${cfg.serial.linuxConsoleSpeed}";
+        }
+      '';
   } // (if (cfg.nixosConfigDir != null) then
          { inherit (cfg) nixosConfigDir; }
        else
@@ -281,6 +288,7 @@ in
       };
 
       rootDevice = mkOption {
+        type = types.str;
         default = "/dev/sda";
         description = ''
           This option specifies the disk to use for the installation.  The installer
@@ -291,6 +299,7 @@ in
       };
 
       partitionSeparator = mkOption {
+        type = types.str;
         default = "";
         description = ''
           The traditional convention for device names of disk partitions is to
@@ -300,6 +309,26 @@ in
           number, usually 'p'.  The <option>partitionSeparator</option> makes this
           configurable for the rootDevice.
         '';
+      };
+
+      serial = {
+        unit = mkOption {
+          type = types.int;
+          default = 0;
+          description = ''
+            The unit number of the serial device to use for the boot loader and
+            the kernel console.
+          '';
+        };
+
+        linuxConsoleSpeed = mkOption {
+	  type = types.str;
+	  default = "115200n8";
+	  description = ''
+	    Serial console setting in the format <speed><parity><bits> as expected
+	    by the console Linux kernel option.
+	  '';
+	};
       };
 
     };

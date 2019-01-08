@@ -34,6 +34,12 @@
   #
   nixosConfigDir
 
+, # A file with an attribute set that contains the configuration
+  # options serialUnit and linuxConsoleConfig from the installImage
+  # configuration. it can be included in the system configuration to
+  # make these parameters configurable.
+  serialConfig
+
 , # A list of packages whose closures will be added to
   # that of systemConfigPath.  It is used to add packages
   # which are not part of the system closure in the default
@@ -99,6 +105,7 @@ let
     ''
       mkdir $out
       cd $out
+      cp ${serialConfig} serial-config.nix
       (cd ${nixosConfigDir} && tar --exclude="*~" --exclude="#*" \
         -cf - .) | tar xf -
     '';

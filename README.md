@@ -487,6 +487,19 @@ constant for each invocation of a `fetchgit` of the same Git
 revision).  Also, it appears that it is not as deterministic as it
 should be, i.e. the hash value may depend on the Git version.
 
+To change the serial device and baud rate to use by the kernel, use
+the following configuration snippet in any of the examples above
+```
+  installImageConfig = {
+    installImage = {
+      serial = {
+        unit = 1;
+        speed = 9600;
+      };
+    };
+  };
+```
+
 ### <a name="installer"></a>Installer
 
 The installer currently supports only PXE-based network boots of UEFI
