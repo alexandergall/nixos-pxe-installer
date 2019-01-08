@@ -51,6 +51,8 @@
 with lib;
 
 let
+  ## pkgs collection from the channel
+  channelPkgs = (import (channel + "/nixos/nixpkgs") {}).pkgs;
 
   ## Create the system configuration from the supplied NixOS system
   ## definition.  The closure of the system.build.toplevel derivation
@@ -68,21 +70,23 @@ let
   ## (see activationPkgs below).  This list has been obtained
   ## heuristically and is almost certainly incomplete (some
   ## installation targets may have to have Internet access during the
-  ## installation process).
+  ## installation process). It is important that those packages are
+  ## evaluated within the context of the channel (as opposed to the
+  ## pkgs with which we have been called).
 
   ## This one is special. It is an implicit dependency of
   ## system.build.initialRamdisk built by
   ## <nixpkgs/nixos/modules/system/boot/stage-1.nix>.  It cannot be
   ## reached through <nixpkgs> and needs to be re-created here.
   ## FIXME: this will probably break at some point.
-  kmodBlacklistUbuntu = pkgs.runCommand "initrd-kmod-blacklist-ubuntu"
-    { src = "${pkgs.kmod-blacklist-ubuntu}/modprobe.conf"; }
+  kmodBlacklistUbuntu = channelPkgs.runCommand "initrd-kmod-blacklist-ubuntu"
+    { src = "${channelPkgs.kmod-blacklist-ubuntu}/modprobe.conf"; }
     ''
       target=$out
-      ${pkgs.perl}/bin/perl -0pe 's/## file: iwlwifi.conf(.+?)##/##/s;' $src > $out
+      ${channelPkgs.perl}/bin/perl -0pe 's/## file: iwlwifi.conf(.+?)##/##/s;' $src > $out
     '';
 
-  activationPkgs = with pkgs; [
+  activationPkgs = with channelPkgs; [
     stdenv
     stdenvNoCC
     binutils
@@ -145,12 +149,12 @@ in pkgs.runCommand "install-tarball-${version}" {}
       if ! [ -e $root/$path ]; then
         echo "adding store path $path"
 
-	# It should be possible to do this with nix-store
+        # It should be possible to do this with nix-store
         # export/import, but how?  As a workaround, add the closure by
         # creating a dummy profile (we don't care about garbage
         # collection).
         nix-env --store $root -p $root/nix/var/nix/profiles/foo \
-	  --set $path --substituters "" --extra-substituters 'auto?trusted=1'
+          --set $path --substituters "" --extra-substituters 'auto?trusted=1'
         rm $root/nix/var/nix/profiles/foo
       fi
     done
