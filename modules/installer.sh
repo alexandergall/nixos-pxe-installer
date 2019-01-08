@@ -172,7 +172,7 @@ informOk "generating system configuration..."
 ## FIXME: starting with 18.09, nix.useSandbox defaults to true, which breaks the execution of
 ## nix-env in a chroot when the builder needs to be invoked.  Disabling the sandbox
 ## is a workaround.
-nixos-enter --root /mnt -c "mv /resolv.conf /etc && \
+nixos-enter --root /mnt -c "/run/current-system/sw/bin/mv /resolv.conf /etc && \
   /run/current-system/sw/bin/nix-env --option sandbox false -p /nix/var/nix/profiles/system -f '<nixpkgs/nixos>' --set -A system"
 informOk "...system configuration done"
 
