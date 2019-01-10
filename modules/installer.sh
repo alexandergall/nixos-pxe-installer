@@ -182,7 +182,7 @@ NIXOS_INSTALL_BOOTLOADER=1 nixos-enter --root /mnt \
   /nix/var/nix/profiles/system/bin/switch-to-configuration boot"
 informOk "...activation done"
 
-chmod 655 /mnt
+chmod 755 /mnt
 
 informOk "rebooting into the new system"
 reboot --force
