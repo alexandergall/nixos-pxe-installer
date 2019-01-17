@@ -192,6 +192,7 @@ let
       cat >$out/config <<EOF
       rootDevice=${cfg.rootDevice}
       partitionSeparator=${cfg.partitionSeparator}
+      useBinaryCache=${optionalString cfg.installerUseBinaryCache "true"}
       EOF
     '';
 in
@@ -285,6 +286,19 @@ in
           The URL of the binary cache to register for the nixos channel derived from
           <option>nixpkgs.path</option>.
         '';
+      };
+
+      installerUseBinaryCache = mkOption {
+        type = types.bool;
+	default = true;
+	description = ''
+	  Whether to use the binary cache when activating the final configuration
+	  on the install target.  This is required if some packages needed for the
+	  system activation cannot be created locally.  The option must be set
+	  to false if the install target is unable to reach the binary cache,
+	  irrespective of whether the cache is needed or not.  This is because
+	  nixos-rebuild tries to query the cache for its properties unconditionally.
+	'';
       };
 
       rootDevice = mkOption {

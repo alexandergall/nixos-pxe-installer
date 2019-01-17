@@ -173,7 +173,7 @@ informOk "generating system configuration..."
 ## nix-env in a chroot when the builder needs to be invoked.  Disabling the sandbox
 ## is a workaround.
 nixos-enter --root /mnt -c "/run/current-system/sw/bin/mv /resolv.conf /etc && \
-  /run/current-system/sw/bin/nix-env --option sandbox false -p /nix/var/nix/profiles/system -f '<nixpkgs/nixos>' --set -A system"
+  /run/current-system/sw/bin/nix-env ${useBinaryCache:---option binary-caches \"\"} --option sandbox false -p /nix/var/nix/profiles/system -f '<nixpkgs/nixos>' --set -A system"
 informOk "...system configuration done"
 
 informOk "activating final configuration..."
