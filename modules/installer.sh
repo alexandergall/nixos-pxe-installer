@@ -169,11 +169,15 @@ nixos-generate-config --root /mnt
 export NIX_PATH=/nix/var/nix/profiles/per-user/root/channels/nixos:nixos-config=/etc/nixos/configuration.nix
 
 informOk "generating system configuration..."
-## FIXME: starting with 18.09, nix.useSandbox defaults to true, which breaks the execution of
-## nix-env in a chroot when the builder needs to be invoked.  Disabling the sandbox
-## is a workaround.
+## Starting with 18.09, nix.useSandbox defaults to true, which breaks the execution of
+## nix-env in a chroot when the builder needs to be invoked because Linux does not
+## allow nested chroots.
+nixEnvOptions="--option sandbox false"
+if [ -z $useBinaryCache ]; then
+    nixEnvOptions="$nixEnvOptions --option binary-caches \"\""
+fi
 nixos-enter --root /mnt -c "/run/current-system/sw/bin/mv /resolv.conf /etc && \
-  /run/current-system/sw/bin/nix-env ${useBinaryCache:---option binary-caches \"\"} --option sandbox false -p /nix/var/nix/profiles/system -f '<nixpkgs/nixos>' --set -A system"
+  /run/current-system/sw/bin/nix-env $nixEnvOptions -p /nix/var/nix/profiles/system -f '<nixpkgs/nixos>' --set -A system"
 informOk "...system configuration done"
 
 informOk "activating final configuration..."
